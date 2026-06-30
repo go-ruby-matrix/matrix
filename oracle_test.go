@@ -107,8 +107,44 @@ func TestOracleMatrix(t *testing.T) {
 		{"round", "Matrix[[1.234,2.567]].round(1)", func(t *testing.T) string {
 			return mat(t, [][]any{{1.234, 2.567}}).RoundEntries(1).ToS()
 		}},
+		// round with no argument (== round(0)) yields Integer entries in MRI.
+		{"round0", "Matrix[[1.4,2.6]].round", func(t *testing.T) string {
+			return mat(t, [][]any{{1.4, 2.6}}).RoundEntries(0).ToS()
+		}},
+		// round with a negative argument rounds at the 10**(-n) place, Integer.
+		{"roundneg", "Matrix[[14.5,25.5]].round(-1)", func(t *testing.T) string {
+			return mat(t, [][]any{{14.5, 25.5}}).RoundEntries(-1).ToS()
+		}},
+		// no-arg round of Rational entries → Integer, half away from zero.
+		{"roundrat", "Matrix[[Rational(3,2),Rational(7,2)]].round", func(t *testing.T) string {
+			return mat(t, [][]any{{NewRat(3, 2), NewRat(7, 2)}}).RoundEntries(0).ToS()
+		}},
+		// round(n>=1) keeps the Rational kind.
+		{"roundratkeep", "Matrix[[Rational(7,3)]].round(1)", func(t *testing.T) string {
+			return mat(t, [][]any{{NewRat(7, 3)}}).RoundEntries(1).ToS()
+		}},
 		{"div", "Matrix[[1,2],[3,4]] / Matrix.identity(2)", func(t *testing.T) string {
 			r, _ := mat(t, [][]any{{1, 2}, {3, 4}}).Div(Identity(2))
+			return r.ToS()
+		}},
+		// Matrix#/ with an Integer scalar floors per Integer/Integer entry.
+		{"divscalarint", "Matrix[[3,5],[7,9]] / 2", func(t *testing.T) string {
+			r, _ := mat(t, [][]any{{3, 5}, {7, 9}}).DivScalar(2)
+			return r.ToS()
+		}},
+		// Negative numerator floors toward negative infinity.
+		{"divscalarintneg", "Matrix[[-3,5]] / 2", func(t *testing.T) string {
+			r, _ := mat(t, [][]any{{-3, 5}}).DivScalar(2)
+			return r.ToS()
+		}},
+		// A Float scalar makes every entry a Float.
+		{"divscalarfloat", "Matrix[[3,5],[7,9]] / 2.0", func(t *testing.T) string {
+			r, _ := mat(t, [][]any{{3, 5}, {7, 9}}).DivScalar(2.0)
+			return r.ToS()
+		}},
+		// A Rational scalar keeps entries Rational.
+		{"divscalarrat", "Matrix[[3,5]] / Rational(2,1)", func(t *testing.T) string {
+			r, _ := mat(t, [][]any{{3, 5}}).DivScalar(NewRat(2, 1))
 			return r.ToS()
 		}},
 		{"empty", "Matrix.empty(2,0)", func(t *testing.T) string { return Zero(2, 0).ToS() }},

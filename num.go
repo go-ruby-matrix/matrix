@@ -178,6 +178,36 @@ func (a Num) Quo(b Num) Num {
 	return ratToNum(new(big.Rat).Quo(a.asRat(), b.asRat()))
 }
 
+// Div returns a/b following Ruby's `/` operator per operand kind, as used by
+// `Matrix#/` with a scalar. Unlike the exact Quo, this reproduces Ruby's
+// type-directed division:
+//
+//   - Integer / Integer → Integer, floor division (so 3/2 == 1, -3/2 == -2);
+//   - Integer / Rational, Rational / anything (non-Float) → Rational;
+//   - any Float involvement → Float.
+//
+// b must be non-zero (callers guard against a zero divisor).
+func (a Num) Div(b Num) Num {
+	switch {
+	case a.kind == kindFlt || b.kind == kindFlt:
+		return NewFloat(a.asFloat() / b.asFloat())
+	case a.kind == kindRat || b.kind == kindRat:
+		return ratToNum(new(big.Rat).Quo(a.asRat(), b.asRat()))
+	default:
+		// Integer / Integer floors toward negative infinity, like Ruby's
+		// Integer#/. big.Int.QuoRem truncates toward zero, so when the
+		// truncated remainder is non-zero and the operands have opposite signs
+		// the quotient is one too high and must be decremented to floor it.
+		q := new(big.Int)
+		r := new(big.Int)
+		q.QuoRem(a.i, b.i, r)
+		if r.Sign() != 0 && (a.i.Sign() < 0) != (b.i.Sign() < 0) {
+			q.Sub(q, big.NewInt(1))
+		}
+		return Num{kind: kindInt, i: q}
+	}
+}
+
 // Neg returns -a.
 func (a Num) Neg() Num {
 	switch a.kind {
@@ -215,16 +245,99 @@ func (a Num) Eql(b Num) bool {
 // Integer#** with 0.5 / Math.sqrt used by Vector#magnitude).
 func (a Num) Sqrt() Num { return NewFloat(math.Sqrt(a.asFloat())) }
 
-// Round returns a rounded to ndigits decimal places. Only Float entries are
-// rounded; Integer and Rational entries are returned unchanged, matching MRI
-// (`Matrix#round` maps `:round` over the entries and Integer#round / Rational
-// round-trip is identity for the cases the library produces).
+// Round returns a rounded to ndigits decimal places, following Ruby's
+// Integer#round / Rational#round / Float#round, which `Matrix#round` maps over
+// the entries. Two rules drive the result kind, exactly as in MRI:
+//
+//   - ndigits <= 0 always yields an Integer (this includes the no-arg form,
+//     called here as Round(0)), rounding half away from zero at the
+//     10**(-ndigits) place;
+//   - ndigits >= 1 keeps the operand's kind: an Integer stays itself, a
+//     Rational stays a (rounded) Rational, a Float stays a (rounded) Float.
+//
+// All kinds round half away from zero, matching Ruby's default rounding mode.
 func (a Num) Round(ndigits int) Num {
-	if a.kind != kindFlt {
-		return a
+	if ndigits >= 1 {
+		switch a.kind {
+		case kindInt:
+			return a
+		case kindRat:
+			return ratToNum(roundRat(a.r, ndigits))
+		default:
+			p := math.Pow(10, float64(ndigits))
+			return NewFloat(roundHalfAway(a.f*p) / p)
+		}
 	}
-	p := math.Pow(10, float64(ndigits))
-	return NewFloat(math.Round(a.f*p) / p)
+	// ndigits <= 0: Integer result.
+	if a.kind == kindFlt {
+		p := math.Pow(10, float64(-ndigits))
+		return NewBigInt(floatToBigInt(roundHalfAway(a.f/p) * p))
+	}
+	// Integer or Rational: round exactly to the 10**(-ndigits) place.
+	return NewBigInt(roundRat(a.asRat(), ndigits).Num())
+}
+
+// roundRat rounds r to ndigits decimal places (half away from zero) and returns
+// the result as an exact *big.Rat. For ndigits >= 0 the result is r scaled,
+// rounded to an integer, then unscaled; for ndigits <= 0 the rounded integer is
+// scaled back up, leaving a whole value whose Num() is the Integer answer.
+func roundRat(r *big.Rat, ndigits int) *big.Rat {
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(abs(ndigits))), nil)
+	scaleRat := new(big.Rat).SetInt(scale)
+	scaled := new(big.Rat)
+	if ndigits >= 0 {
+		scaled.Mul(r, scaleRat)
+	} else {
+		scaled.Quo(r, scaleRat)
+	}
+	rounded := new(big.Rat).SetInt(ratRoundHalfAway(scaled))
+	if ndigits >= 0 {
+		return rounded.Quo(rounded, scaleRat)
+	}
+	return rounded.Mul(rounded, scaleRat)
+}
+
+// ratRoundHalfAway rounds a *big.Rat to the nearest integer, with halves going
+// away from zero (matching Ruby's default).
+func ratRoundHalfAway(r *big.Rat) *big.Int {
+	num := r.Num()
+	den := r.Denom()
+	q := new(big.Int)
+	rem := new(big.Int)
+	q.QuoRem(num, den, rem) // truncated toward zero
+	if rem.Sign() == 0 {
+		return q
+	}
+	// Compare 2*|rem| with den to decide whether to round away from zero.
+	twice := new(big.Int).Abs(rem)
+	twice.Lsh(twice, 1)
+	if twice.Cmp(den) >= 0 {
+		if num.Sign() < 0 {
+			q.Sub(q, big.NewInt(1))
+		} else {
+			q.Add(q, big.NewInt(1))
+		}
+	}
+	return q
+}
+
+// roundHalfAway rounds a float64 to the nearest integer, halves away from zero.
+// math.Round already implements this rule.
+func roundHalfAway(f float64) float64 { return math.Round(f) }
+
+// floatToBigInt converts a whole-valued float64 to a *big.Int.
+func floatToBigInt(f float64) *big.Int {
+	bf := new(big.Float).SetFloat64(f)
+	i, _ := bf.Int(nil)
+	return i
+}
+
+// abs returns the absolute value of an int.
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // String renders the Num exactly as Ruby's Kernel#inspect would for that kind:

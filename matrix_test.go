@@ -242,8 +242,9 @@ func TestArithmetic(t *testing.T) {
 	if mv.ToS() != "Vector[3, 7]" {
 		t.Errorf("MulVector = %s", mv.ToS())
 	}
+	// Matrix[[1,2],[3,4]] / 2 floors per Integer/Integer entry, like Ruby's `/`.
 	dv, _ := a.DivScalar(2)
-	if dv.ToS() != "Matrix[[(1/2), (1/1)], [(3/2), (2/1)]]" {
+	if dv.ToS() != "Matrix[[0, 1], [1, 2]]" {
 		t.Errorf("DivScalar = %s", dv.ToS())
 	}
 	div, _ := a.Div(Identity(2))
