@@ -97,8 +97,10 @@ func (m *Matrix) Div(other *Matrix) (*Matrix, error) {
 	return m.Mul(inv)
 }
 
-// DivScalar returns m with each entry divided by scalar (exact: integers become
-// Rationals), like `Matrix#/` with a scalar.
+// DivScalar returns m with each entry divided by scalar, like `Matrix#/` with a
+// scalar. Division follows Ruby's `/` operator per operand kind: Integer/Integer
+// floors to an Integer, any Rational stays Rational, and any Float yields a
+// Float — see Num.Div.
 func (m *Matrix) DivScalar(scalar any) (*Matrix, error) {
 	s, err := numFromAny(scalar)
 	if err != nil {
@@ -106,7 +108,7 @@ func (m *Matrix) DivScalar(scalar any) (*Matrix, error) {
 	}
 	e := make([]Num, len(m.e))
 	for i := range m.e {
-		e[i] = m.e[i].Quo(s)
+		e[i] = m.e[i].Div(s)
 	}
 	return newFromNums(m.rows, m.cols, e), nil
 }
@@ -164,9 +166,11 @@ func (m *Matrix) Pow(p int) (*Matrix, error) {
 	return result, nil
 }
 
-// RoundEntries returns the matrix with every Float entry rounded to ndigits
-// decimal places (Integer/Rational entries are unchanged), like
-// `Matrix#round(ndigits)`.
+// RoundEntries returns the matrix with every entry rounded to ndigits decimal
+// places, like `Matrix#round(ndigits)`. Per Ruby's per-kind round semantics,
+// ndigits <= 0 (which includes the no-arg `Matrix#round`, called as
+// RoundEntries(0)) produces Integer entries, while ndigits >= 1 keeps each
+// entry's kind — see Num.Round.
 func (m *Matrix) RoundEntries(ndigits int) *Matrix {
 	e := make([]Num, len(m.e))
 	for i := range m.e {

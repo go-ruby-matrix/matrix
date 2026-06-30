@@ -5,6 +5,7 @@
 package matrix
 
 import (
+	"fmt"
 	"math"
 	"strings"
 )
@@ -119,11 +120,25 @@ func (v *Vector) InnerProduct(other *Vector) (Num, error) {
 	return sum, nil
 }
 
-// CrossProduct returns the cross product of 3-dimensional vectors, like
-// `Vector#cross_product`. Both vectors must have size 3.
+// CrossProduct returns the cross product with one other vector, like the binary
+// form of `Vector#cross_product`. It mirrors MRI exactly: the receiver must have
+// dimension at least 2, and the cross product with a single argument is only
+// defined when the receiver is 3-dimensional. MRI implements cross_product(*vs)
+// requiring vs.size == size-2, so for a single argument any size other than 3
+// is the wrong number of arguments and raises ArgumentError; a sub-2 dimension
+// instead raises ErrOperationNotDefined, and a dimension mismatch between the
+// two vectors raises ErrDimensionMismatch.
 func (v *Vector) CrossProduct(other *Vector) (*Vector, error) {
-	if len(v.e) != 3 || len(other.e) != 3 {
+	size := len(v.e)
+	if size < 2 {
 		return nil, ErrOperationNotDefined
+	}
+	// MRI: raise ArgumentError unless vs.size == size-2. Here vs.size == 1.
+	if size-2 != 1 {
+		return nil, argumentError(fmt.Sprintf("wrong number of arguments (1 for %d)", size-2))
+	}
+	if len(other.e) != size {
+		return nil, ErrDimensionMismatch
 	}
 	a, b := v.e, other.e
 	e := []Num{

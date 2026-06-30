@@ -148,6 +148,80 @@ func TestItoa(t *testing.T) {
 	}
 }
 
+// TestNumDiv exercises Num.Div, which follows Ruby's `/` operator per operand
+// kind (Integer/Integer floors, any Rational stays Rational, any Float yields a
+// Float) — the semantics Matrix#/ with a scalar must match against MRI 4.0.5.
+func TestNumDiv(t *testing.T) {
+	cases := []struct {
+		a, b Num
+		want string
+	}{
+		// Integer / Integer: floor division (toward negative infinity).
+		{NewInt(3), NewInt(2), "1"},
+		{NewInt(7), NewInt(2), "3"},
+		{NewInt(-3), NewInt(2), "-2"},
+		{NewInt(-7), NewInt(2), "-4"},
+		{NewInt(7), NewInt(-2), "-4"},
+		{NewInt(-7), NewInt(-2), "3"},
+		{NewInt(6), NewInt(3), "2"}, // exact: no flooring correction
+		{NewInt(-6), NewInt(3), "-2"},
+		// Float involvement: Float result.
+		{NewInt(3), NewFloat(2.0), "1.5"},
+		{NewFloat(3.0), NewInt(2), "1.5"},
+		// Rational (no Float): Rational result.
+		{NewInt(3), NewRat(2, 1), "(3/2)"},
+		{NewRat(3, 1), NewInt(2), "(3/2)"},
+		{NewRat(1, 2), NewRat(1, 4), "(2/1)"},
+	}
+	for _, c := range cases {
+		if got := c.a.Div(c.b).String(); got != c.want {
+			t.Errorf("%v.Div(%v) = %s; want %s", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// TestNumRoundKinds covers Num.Round across kinds and the ndigits sign rules:
+// ndigits <= 0 (including the no-arg form, called as Round(0)) yields Integer;
+// ndigits >= 1 keeps the operand kind. All halves round away from zero, matching
+// MRI 4.0.5.
+func TestNumRoundKinds(t *testing.T) {
+	cases := []struct {
+		n       Num
+		ndigits int
+		want    string
+		kind    numKind
+	}{
+		// no-arg / round(0): Integer result for every kind.
+		{NewFloat(1.4), 0, "1", kindInt},
+		{NewFloat(2.6), 0, "3", kindInt},
+		{NewFloat(-2.5), 0, "-3", kindInt}, // half away from zero
+		{NewFloat(2.5), 0, "3", kindInt},
+		{NewInt(5), 0, "5", kindInt},
+		{NewRat(3, 2), 0, "2", kindInt},
+		{NewRat(7, 2), 0, "4", kindInt},
+		{NewRat(-3, 2), 0, "-2", kindInt},
+		// ndigits < 0: Integer, rounding at the 10**(-n) place.
+		{NewFloat(14.5), -1, "10", kindInt},
+		{NewFloat(25.5), -1, "30", kindInt},
+		{NewInt(15), -1, "20", kindInt},
+		{NewInt(14), -1, "10", kindInt},
+		{NewRat(255, 10), -1, "30", kindInt},
+		// ndigits >= 1: kind preserved.
+		{NewInt(5), 2, "5", kindInt},
+		{NewRat(1, 2), 2, "(1/2)", kindRat},
+		{NewRat(7, 3), 1, "(23/10)", kindRat},
+		{NewFloat(1.2345), 2, "1.23", kindFlt},
+		{NewFloat(2.567), 1, "2.6", kindFlt},
+	}
+	for _, c := range cases {
+		got := c.n.Round(c.ndigits)
+		if got.String() != c.want || got.kind != c.kind {
+			t.Errorf("%v.Round(%d) = %s (kind %d); want %s (kind %d)",
+				c.n, c.ndigits, got.String(), got.kind, c.want, c.kind)
+		}
+	}
+}
+
 func TestDivSingularDivisor(t *testing.T) {
 	a, _ := New([][]any{{1, 2}, {3, 4}})
 	sing, _ := New([][]any{{1, 1}, {1, 1}})

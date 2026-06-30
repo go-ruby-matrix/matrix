@@ -93,8 +93,27 @@ func TestVectorProducts(t *testing.T) {
 	if err != nil || cp.ToS() != "Vector[0, 0, 1]" {
 		t.Errorf("CrossProduct = %s, %v", cp.ToS(), err)
 	}
-	if _, err := vec(t, 1, 2).CrossProduct(vec(t, 1, 2)); !errors.Is(err, ErrOperationNotDefined) {
-		t.Errorf("CrossProduct 2D = %v", err)
+	// 2-D cross_product with one argument is the wrong number of arguments in
+	// MRI (Vector[1,2].cross_product(Vector[3,4]) raises ArgumentError "wrong
+	// number of arguments (1 for 0)"), not ErrOperationNotDefined.
+	if _, err := vec(t, 1, 2).CrossProduct(vec(t, 1, 2)); !errors.Is(err, ErrArgument) {
+		t.Errorf("CrossProduct 2D class = %v", err)
+	}
+	if _, err := vec(t, 1, 2).CrossProduct(vec(t, 3, 4)); err == nil || err.Error() != "wrong number of arguments (1 for 0)" {
+		t.Errorf("CrossProduct 2D message = %v", err)
+	}
+	// A 4-D vector also takes the wrong-number-of-arguments path with one arg
+	// (it needs size-2 == 2 arguments): the message reports the expected count.
+	if _, err := vec(t, 1, 0, 0, 0).CrossProduct(vec(t, 0, 1, 0, 0)); err == nil || err.Error() != "wrong number of arguments (1 for 2)" {
+		t.Errorf("CrossProduct 4D message = %v", err)
+	}
+	// Dimension below 2 is genuinely undefined.
+	if _, err := vec(t, 5).CrossProduct(vec(t, 5)); !errors.Is(err, ErrOperationNotDefined) {
+		t.Errorf("CrossProduct 1D = %v", err)
+	}
+	// 3-D with a mismatched-dimension argument is a dimension mismatch.
+	if _, err := vec(t, 1, 2, 3).CrossProduct(vec(t, 1, 2)); !errors.Is(err, ErrDimensionMismatch) {
+		t.Errorf("CrossProduct 3D mismatch = %v", err)
 	}
 }
 
